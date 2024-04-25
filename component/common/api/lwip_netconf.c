@@ -19,8 +19,8 @@
 #include "wlan_fast_connect/example_wlan_fast_connect.h"
 #endif
 
-#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
 #if LWIP_IPV6
+#if LWIP_IPV6_DHCP6 && (LWIP_VERSION_MAJOR >= 2) && (LWIP_VERSION_MINOR >= 1)
 #include "lwip/dhcp6.h"
 #include "lwip/prot/dhcp6.h"
 #endif
@@ -100,8 +100,8 @@
 
 /* Private define ------------------------------------------------------------*/
 #define MAX_DHCP_TRIES 5
-#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
 #if LWIP_IPV6
+#if LWIP_IPV6_DHCP6 && (LWIP_VERSION_MAJOR >= 2) && (LWIP_VERSION_MINOR >= 1)
 #define MAX_DHCP6_TRIES 5
 #endif
 #endif
@@ -231,12 +231,6 @@ extern uint32_t offer_ip;
 extern uint32_t server_ip;
 extern u8 is_the_same_ap;
 extern void restore_wifi_info_to_flash(uint32_t offer_ip, uint32_t server_ip);
-#endif
-
-#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
-#if LWIP_IPV6 && (LWIP_IPV6_DHCP6_STATEFUL||LWIP_IPV6_DHCP6_STATELESS)
-extern err_t dhcp6_enable(struct netif *netif);
-#endif
 #endif
 
 /**
@@ -484,55 +478,16 @@ uint8_t LwIP_DHCP(uint8_t idx, uint8_t dhcp_state)
 	}   
 }
 
-void LwIP_ReleaseIP(uint8_t idx)
-{
-	struct ip_addr ipaddr;
-	struct ip_addr netmask;
-	struct ip_addr gw;
-	struct netif *pnetif = &xnetif[idx];
-#if LWIP_VERSION_MAJOR >= 2
-	IP4_ADDR(ip_2_ip4(&ipaddr), 0, 0, 0, 0);
-	IP4_ADDR(ip_2_ip4(&netmask), 255, 255 , 255, 0);
-	IP4_ADDR(ip_2_ip4(&gw), 0, 0, 0, 0);
-	netif_set_addr(pnetif, ip_2_ip4(&ipaddr), ip_2_ip4(&netmask),ip_2_ip4(&gw));
-#else
-	IP4_ADDR(&ipaddr, 0, 0, 0, 0);
-	IP4_ADDR(&netmask, 255, 255, 255, 0);
-	IP4_ADDR(&gw, 0, 0, 0, 0);
-	
-	netif_set_addr(pnetif, &ipaddr , &netmask, &gw);
-#endif
-
-#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
 #if LWIP_IPV6
-	IP6_ADDR(ip_2_ip6(&ipaddr), 0,0,0,0);
-	for (int idx = 1; idx < LWIP_IPV6_NUM_ADDRESSES; idx++) {
-		netif_ip6_addr_set_state(pnetif, idx, IP6_ADDR_INVALID);
-		netif_ip6_addr_set(pnetif, idx, ip_2_ip6(&ipaddr));
-	}
-#endif
-#endif
-}
-
-uint8_t* LwIP_GetMAC(struct netif *pnetif)
-{
-	return (uint8_t *) (pnetif->hwaddr);
-}
-
-uint8_t* LwIP_GetIP(struct netif *pnetif)
-{
-	return (uint8_t *) &(pnetif->ip_addr);
-}
-
-#if LWIP_VERSION_MAJOR >= 2 && LWIP_VERSION_MINOR >= 1
-#if LWIP_IPV6
+#if LWIP_IPV6_DHCP6 && (LWIP_VERSION_MAJOR >= 2) && (LWIP_VERSION_MINOR >= 1)
+extern err_t dhcp6_enable(struct netif *netif);
 uint8_t LwIP_DHCP6(uint8_t idx, uint8_t dhcp6_state)
 {
 	uint8_t *ipv6_global;
 	uint8_t DHCP6_state;
 	struct netif *pnetif = NULL;
 	struct dhcp6 *dhcp6 = NULL;
-#ifdef CHIP_PROJECT
+#if defined(CONFIG_MATTER) && CONFIG_MATTER
 	int dhcp6_handler_trigger = 0;
 #endif
 	err_t err;
@@ -586,7 +541,7 @@ uint8_t LwIP_DHCP6(uint8_t idx, uint8_t dhcp6_state)
 				ip6_addr_t zero_address;
 				ip6_addr_set_any(&zero_address);
 
-#ifdef CHIP_PROJECT
+#if defined(CONFIG_MATTER) && CONFIG_MATTER
 				if (ip6_addr_isvalid(netif_ip6_addr_state(pnetif, 0)) && (dhcp6_handler_trigger == 0))
 				{
 					wifi_indication(WIFI_EVENT_DHCP6_DONE, NULL, 0, 0);
@@ -609,7 +564,7 @@ uint8_t LwIP_DHCP6(uint8_t idx, uint8_t dhcp6_state)
 
 					/*Todo: error_flag for DHCPv6*/
 
-#ifdef CHIP_PROJECT
+#if defined(CONFIG_MATTER) && CONFIG_MATTER
 					if (!dhcp6_handler_trigger)
 						wifi_indication(WIFI_EVENT_DHCP6_DONE, NULL, 0, 0);
 #endif
@@ -631,7 +586,7 @@ uint8_t LwIP_DHCP6(uint8_t idx, uint8_t dhcp6_state)
 						if(idx == NET_IF_NUM -1) // This is the ethernet interface, set it up for static ip address
 							netif_set_up(pnetif);
 #endif
-#ifdef CHIP_PROJECT
+#if defined(CONFIG_MATTER) && CONFIG_MATTER
 						if (!dhcp6_handler_trigger)
 							wifi_indication(WIFI_EVENT_DHCP6_DONE, NULL, 0, 0);
 #endif
@@ -660,18 +615,48 @@ uint8_t LwIP_DHCP6(uint8_t idx, uint8_t dhcp6_state)
 		vTaskDelay(30);
 	}
 }
-
-uint8_t* LwIP_GetIPv6_linklocal(struct netif *pnetif)
-{
-	return (uint8_t *) netif_ip6_addr(pnetif, 0)->addr;
-}
-
-uint8_t* LwIP_GetIPv6_global(struct netif *pnetif)
-{
-	return (uint8_t *) netif_ip6_addr(pnetif, 1)->addr;
-}
 #endif
 #endif
+
+void LwIP_ReleaseIP(uint8_t idx)
+{
+	struct ip_addr ipaddr;
+	struct ip_addr netmask;
+	struct ip_addr gw;
+	struct netif *pnetif = &xnetif[idx];
+#if LWIP_VERSION_MAJOR >= 2
+	IP4_ADDR(ip_2_ip4(&ipaddr), 0, 0, 0, 0);
+	IP4_ADDR(ip_2_ip4(&netmask), 255, 255 , 255, 0);
+	IP4_ADDR(ip_2_ip4(&gw), 0, 0, 0, 0);
+	netif_set_addr(pnetif, ip_2_ip4(&ipaddr), ip_2_ip4(&netmask),ip_2_ip4(&gw));
+#else
+	IP4_ADDR(&ipaddr, 0, 0, 0, 0);
+	IP4_ADDR(&netmask, 255, 255, 255, 0);
+	IP4_ADDR(&gw, 0, 0, 0, 0);
+	
+	netif_set_addr(pnetif, &ipaddr , &netmask, &gw);
+#endif
+
+#if LWIP_IPV6
+#if LWIP_IPV6_DHCP6 && (LWIP_VERSION_MAJOR >= 2) && (LWIP_VERSION_MINOR >= 1)
+	IP6_ADDR(ip_2_ip6(&ipaddr), 0,0,0,0);
+	for (int idx = 1; idx < LWIP_IPV6_NUM_ADDRESSES; idx++) {
+		netif_ip6_addr_set_state(pnetif, idx, IP6_ADDR_INVALID);
+		netif_ip6_addr_set(pnetif, idx, ip_2_ip6(&ipaddr));
+	}
+#endif
+#endif
+}
+
+uint8_t* LwIP_GetMAC(struct netif *pnetif)
+{
+	return (uint8_t *) (pnetif->hwaddr);
+}
+
+uint8_t* LwIP_GetIP(struct netif *pnetif)
+{
+	return (uint8_t *) &(pnetif->ip_addr);
+}
 
 uint8_t* LwIP_GetGW(struct netif *pnetif)
 {
@@ -815,20 +800,18 @@ void LwIP_AUTOIP(struct netif *pnetif)
 	}
 }
 #endif
+
 #if LWIP_IPV6
-/* Get IPv6 address with lwip 1.5.0 */
-void LwIP_AUTOIP_IPv6(struct netif *pnetif)
+uint8_t* LwIP_GetIPv6_linklocal(struct netif *pnetif)
 {
-#if LWIP_VERSION_MAJOR >= 2
-	uint8_t *ipv6 = (uint8_t *) netif_ip6_addr(pnetif, 0)->addr;
-#else
-	uint8_t *ipv6 = (uint8_t *) &(pnetif->ip6_addr[0].addr[0]);
-#endif
-	netif_create_ip6_linklocal_address(pnetif, 1);
-	printf("\nIPv6 link-local address: %02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x:%02x%02x\n",
-	       ipv6[0], ipv6[1],  ipv6[2],  ipv6[3],  ipv6[4],  ipv6[5],  ipv6[6], ipv6[7],
-	       ipv6[8], ipv6[9], ipv6[10], ipv6[11], ipv6[12], ipv6[13], ipv6[14], ipv6[15]);
+	return (uint8_t *) netif_ip6_addr(pnetif, 0)->addr;
 }
+#if LWIP_IPV6_DHCP6 && (LWIP_VERSION_MAJOR >= 2) && (LWIP_VERSION_MINOR >= 1)
+uint8_t* LwIP_GetIPv6_global(struct netif *pnetif)
+{
+	return (uint8_t *) netif_ip6_addr(pnetif, 1)->addr;
+}
+#endif
 #endif
 
 uint32_t LWIP_Get_Dynamic_Sleep_Interval()

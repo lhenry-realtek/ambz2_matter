@@ -317,7 +317,7 @@ Users can use either of functions depending on their needs.
 * @retval   status: Success:1 or Failure: Others.
 
 */
-#ifdef CHIP_PROJECT
+#if defined(CONFIG_MATTER) && CONFIG_MATTER
 int flash_burst_write(flash_t *obj, uint32_t address ,uint32_t Length, const uint8_t * data)
 #else
 int flash_burst_write(flash_t *obj, uint32_t address ,uint32_t Length, uint8_t * data)
@@ -326,7 +326,7 @@ int flash_burst_write(flash_t *obj, uint32_t address ,uint32_t Length, uint8_t *
     flash_init(obj);
 
     flash_resource_lock();
-    hal_flash_burst_write((obj->phal_spic_adaptor), Length, address, data);
+    hal_flash_burst_write((obj->phal_spic_adaptor), Length, address, (uint8_t *)data);
     flash_resource_unlock();
     return 1;
 }

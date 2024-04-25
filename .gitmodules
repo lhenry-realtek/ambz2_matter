@@ -1,0 +1,3 @@
+[submodule "component/common/application/matter"]
+	path = component/common/application/matter
+	url = git@github.com:Ameba-AIoT/ameba-rtos-matter.git
