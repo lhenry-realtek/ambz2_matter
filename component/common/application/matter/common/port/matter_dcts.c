@@ -29,7 +29,7 @@
                                                   /*!< max number of variable in module = floor (4024 / (32 + 64)) = 41 */
 
 #define DCT_BEGIN_ADDR_MATTER2  DCT_BEGIN_ADDR2
-#define MODULE_NUM2             6 
+#define MODULE_NUM2             10
 #define VARIABLE_NAME_SIZE2     32
 #define VARIABLE_VALUE_SIZE2    400 + 4           /* +4 is required, else the max variable size we can store is 396 */
                                                   /*!< max number of variable in module = floor (4024 / (32 + 400)) = 9 */
@@ -116,9 +116,211 @@ int32_t dct_get_encrypted_variable(dct_handle_t *dct_handle, char *variable_name
 #endif // MBEDTLS_CIPHER_MODE_CTR
 #endif
 
+#if defined(DCT_UPDATE_ENABLE) && DCT_UPDATE_ENABLE
+#include "utility.h"
+#include <flash_api.h>
+#include <device_lock.h>
+
+/**
+ * Please change the DCT_BEGIN_ADDR_OLD and DCT_BEGIN_ADDR2_OLD before using dct_update
+ */
+
+#define MODULE_NAME_OFFSET      8
+#define MODULE_INFO_SIZE        32
+#define MODULE_NUM_OFFSET       44
+#define DCT_BACKUP_OFFSET       52
+
+void dct1_update_settings(void)
+{
+    flash_t flash;
+    int count, value, i;
+    uint8_t *buffer;
+    uint32_t buffer_size = 0x1000;
+    uint8_t new_module_name[15];
+    int cur_module_num = MODULE_NUM;
+    int prev_module_num = 0;
+    int write_flash = 0;
+
+    buffer = rtw_malloc(buffer_size);
+    if (!buffer)
+    {
+        printf("dct_check_swap: malloc error\n");
+        goto exit;
+    }
+
+    // 1. Loop through DCT1
+    for (i = 0; i < MODULE_NUM; i ++)
+    {
+        // 2. Read from flash
+        device_mutex_lock(RT_DEV_LOCK_FLASH);
+        flash_stream_read(&flash, DCT_BEGIN_ADDR_OLD+(i*buffer_size), buffer_size, buffer);
+        device_mutex_unlock(RT_DEV_LOCK_FLASH);
+
+        if(buffer[0] != 0xFF)
+        {
+            // 3. Ensure that flash data belongs to DCT1
+            if (strncmp(buffer, "DCT1", 4) == 0)
+            {
+                // 4. For v1.0 Module Name changed. If module name starts with "chip" must change.
+                if (strncmp(buffer+MODULE_NAME_OFFSET, "chip", 4) == 0)
+                {
+                    value = i + 1;
+                    snprintf(new_module_name, 15, "matter_kvs1_%d", value);
+                    for (count = 0; count < sizeof(new_module_name); count++)
+                    {
+                        buffer[MODULE_NAME_OFFSET+count] = new_module_name[count];
+                    }
+                    memset(buffer+MODULE_NAME_OFFSET+count, 0, MODULE_INFO_SIZE-MODULE_NAME_OFFSET-count);
+                    write_flash = 1;
+                }
+
+                // 5. If Backup value differs
+                if(buffer[DCT_BACKUP_OFFSET] != ENABLE_BACKUP)
+                {
+                    memset(buffer+DCT_BACKUP_OFFSET, ENABLE_BACKUP, 1);
+                    write_flash = 1;
+                }
+
+                // 6. If module number has changed, set new module number
+                if (prev_module_num != cur_module_num)
+                {
+                    memset(buffer+MODULE_NUM_OFFSET, cur_module_num, 1);
+                    write_flash = 1;
+                }
+
+                // 7. If DCT address has changed, set write_flash.
+                if (DCT_BEGIN_ADDR_OLD != DCT_BEGIN_ADDR_MATTER)
+                {
+                    write_flash = 1;
+                }
+
+                if (write_flash)
+                {
+                    device_mutex_lock(RT_DEV_LOCK_FLASH);
+                     //8. Erase flash data from old DCT address (DCT_BEGIN_ADDR_OLD)
+                    flash_erase_sector(&flash, DCT_BEGIN_ADDR_OLD+(i*buffer_size));
+                    // 9. Erase flash data in new DCT address (DCT_BEGIN_ADDR_MATTER)
+                    flash_erase_sector(&flash, DCT_BEGIN_ADDR_MATTER+(i*buffer_size));
+                    // 10. Write data to new DCT address (DCT_BEGIN_ADDR_MATTER)
+                    flash_stream_write(&flash, DCT_BEGIN_ADDR_MATTER+(i*buffer_size), buffer_size, buffer);
+                    device_mutex_unlock(RT_DEV_LOCK_FLASH);
+
+                    write_flash = 0;
+                }
+            }
+        }
+    }
+
+exit:
+    if(buffer)
+    {
+        rtw_free(buffer);
+    }
+
+    return;
+}
+
+void dct2_update_settings(void)
+{
+    flash_t flash;
+    int count, value, i;
+    uint8_t *buffer;
+    uint32_t buffer_size = 0x1000;
+    uint8_t new_module_name[15];
+    int cur_module_num = MODULE_NUM2;
+    int prev_module_num = 0;
+    int write_flash = 0;
+
+    buffer = rtw_malloc(buffer_size);
+    if (!buffer)
+    {
+        printf("dct_check_swap: malloc error\n");
+        goto exit;
+    }
+
+    // 1. Loop through DCT1
+    for (i = 0; i < MODULE_NUM2; i ++)
+    {
+        // 2. Read from flash
+        device_mutex_lock(RT_DEV_LOCK_FLASH);
+        flash_stream_read(&flash, DCT_BEGIN_ADDR2_OLD+(i*buffer_size), buffer_size, buffer);
+        device_mutex_unlock(RT_DEV_LOCK_FLASH);
+
+        if(buffer[0] != 0xFF)
+        {
+            // 3. Ensure that flash data belongs to DCT1
+            if (strncmp(buffer, "DCT2", 4) == 0)
+            {
+                // 4. For v1.0 Module Name changed. If module name starts with "chip" must change.
+                if (strncmp(buffer+MODULE_NAME_OFFSET, "chip", 4) == 0)
+                {
+                    value = i + 1;
+                    snprintf(new_module_name, 15, "matter_kvs2_%d", value);
+                    for (count = 0; count < sizeof(new_module_name); count++)
+                    {
+                        buffer[MODULE_NAME_OFFSET+count] = new_module_name[count];
+                    }
+                    memset(buffer+MODULE_NAME_OFFSET+count, 0, MODULE_INFO_SIZE-MODULE_NAME_OFFSET-count);
+                    write_flash = 1;
+                }
+
+                // 5. If Backup value changed, set backup value
+                if(buffer[DCT_BACKUP_OFFSET] != ENABLE_BACKUP)
+                {
+                    memset(buffer+DCT_BACKUP_OFFSET, ENABLE_BACKUP, 1);
+                    write_flash = 1;
+                }
+
+                // 6. If module number has changed, set new module number
+                if (prev_module_num != cur_module_num)
+                {
+                    memset(buffer+MODULE_NUM_OFFSET, cur_module_num, 1);
+                    write_flash = 1;
+                }
+
+                //7. If DCT address has changed, set write_flash.
+                if (DCT_BEGIN_ADDR2_OLD != DCT_BEGIN_ADDR_MATTER2)
+                {
+                    write_flash = 1;
+                }
+
+                if (write_flash)
+                {
+                    device_mutex_lock(RT_DEV_LOCK_FLASH);
+                     //8. Erase flash data from old DCT address (DCT_BEGIN_ADDR2_OLD)
+                    flash_erase_sector(&flash, DCT_BEGIN_ADDR2_OLD+(i*buffer_size));
+                    // 9. Erase flash data in new DCT address (DCT_BEGIN_ADDR_MATTER2)
+                    flash_erase_sector(&flash, DCT_BEGIN_ADDR_MATTER2+(i*buffer_size));
+                    // 10. Write data to new DCT address (DCT_BEGIN_ADDR_MATTER2)
+                    flash_stream_write(&flash, DCT_BEGIN_ADDR_MATTER2+(i*buffer_size), buffer_size, buffer);
+                    device_mutex_unlock(RT_DEV_LOCK_FLASH);
+
+                    write_flash = 0;
+                }
+            }
+        }
+    }
+
+exit:
+    if(buffer)
+    {
+        rtw_free(buffer);
+    }
+
+    return;
+}
+#endif
+
 s32 initPref(void)
 {
     s32 ret;
+
+#if defined(DCT_UPDATE_ENABLE) && DCT_UPDATE_ENABLE
+    printf("\nDCT change happening!!\n");
+    dct1_update_settings();
+    dct2_update_settings();
+#endif
+
     ret = dct_init(DCT_BEGIN_ADDR_MATTER, MODULE_NUM, VARIABLE_NAME_SIZE, VARIABLE_VALUE_SIZE, ENABLE_BACKUP, ENABLE_WEAR_LEVELING);
     if (ret != DCT_SUCCESS)
         printf("dct_init failed with error: %d\n", ret);
